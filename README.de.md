@@ -3,7 +3,7 @@
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 ![GitHub release](https://img.shields.io/github/v/release/Turavien/dwd_rainradar)
 ![GitHub last commit](https://img.shields.io/github/last-commit/Turavien/dwd_rainradar)
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.3%2B-18BCF2?logo=homeassistant&logoColor=white)](https://www.home-assistant.io/)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.3.0%2B-18BCF2?logo=homeassistant&logoColor=white)](https://www.home-assistant.io/)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)
 
 [![Open your Home Assistant instance and open the repository inside HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Turavien&repository=dwd_rainradar)
@@ -203,7 +203,11 @@ Die 30-sekündliche Coordinator-Aktualisierung wird außerdem benötigt, damit d
 
 ### RW-Historie und Backfill
 
-RADOLAN-RW-Dateien werden lokal unter `/config/dwd_rainradar` gespeichert. Die Integration hält daraus die für rollierende Niederschlagssummen benötigte Historie vor.
+RADOLAN-RW-Dateien werden lokal unter `/config/.cache/dwd_rainradar` gespeichert. Die Integration hält daraus die für rollierende Niederschlagssummen benötigte Historie vor.
+
+Beim Upgrade übernimmt die Integration vor der ersten Aktualisierung automatisch das gesamte vorhandene Radararchiv aus `/config/dwd_rainradar`.
+
+Falls die Migration stoppt, nennt Home Assistant den betroffenen Pfad. Sichere bei einem Inhaltskonflikt beide Dateien, vergleiche sie und löse den Konflikt vor dem erneuten Laden des Eintrags. Beim Kopieren über Dateisystemgrenzen muss das Ziel anonyme Dateien und ihre atomare Veröffentlichung per Hardlink unterstützen.
 
 Nach einer Neueinrichtung oder wenn historische Intervalle fehlen, lädt die Integration verfügbare RW-Produkte im Hintergrund nach. Der Backfill erfolgt unabhängig von den aktuellen Sensoraktualisierungen und blockiert Home Assistant nicht.
 
@@ -300,7 +304,7 @@ Nach dem Neustart:
 
 Die Integration kann unter **Einstellungen → Geräte & Dienste → DWD Regenradar** über das Menü des jeweiligen Eintrags entfernt werden.
 
-Die lokal gespeicherten Radardaten bleiben unter `/config/dwd_rainradar` erhalten. Wenn alle Einträge der Integration entfernt wurden und die Daten nicht mehr benötigt werden, kann dieses Verzeichnis manuell gelöscht werden.
+Die lokal gespeicherten Radardaten bleiben unter `/config/.cache/dwd_rainradar` erhalten. Wenn alle Einträge der Integration entfernt wurden und die Daten nicht mehr benötigt werden, kann dieses Verzeichnis manuell gelöscht werden.
 
 ## Projektgeschichte
 

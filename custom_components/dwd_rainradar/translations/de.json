@@ -74,6 +74,11 @@
       }
     }
   },
+  "exceptions": {
+    "archive_migration_failed": {
+      "message": "Das Radararchiv konnte nicht verschoben werden: {reason}"
+    }
+  },
   "entity": {
     "sensor": {
       "precipitation_last_1h": {

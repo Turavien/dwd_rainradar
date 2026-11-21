@@ -78,14 +78,9 @@ def isolated_storage(
 ) -> Storage:
     """Return storage using a per-test temporary directory."""
 
-    storage = Storage(
-        hass,
-    )
-
-    storage._base_directory = (
-        tmp_path
-        / "dwd_rainradar"
-    )
+    hass.config.config_dir = str(tmp_path)
+    storage = Storage(hass)
+    assert storage.get_product_directory("RW") == tmp_path / ".cache" / "dwd_rainradar" / "rw"
 
     return storage
 

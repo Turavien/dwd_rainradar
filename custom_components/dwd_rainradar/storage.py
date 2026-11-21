@@ -8,18 +8,19 @@ import os
 
 from datetime import UTC, datetime
 
-_LOGGER = logging.getLogger(__name__)
-
 from pathlib import Path
 from threading import RLock
 
 from homeassistant.core import HomeAssistant
 
+from .cache_migration import cache_directory
 from .models import (
     FetchResult,
     ProductMetadata,
 )
 from .products import Product
+
+_LOGGER = logging.getLogger(__name__)
 
 _METADATA_FILENAME = "metadata.json"
 
@@ -46,9 +47,8 @@ class Storage:
 
         self._hass = hass
 
-        self._base_directory = (
+        self._base_directory = cache_directory(
             Path(hass.config.config_dir)
-            / "dwd_rainradar"
         )
 
         self._file_cache: dict[

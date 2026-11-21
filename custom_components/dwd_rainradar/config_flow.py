@@ -135,7 +135,7 @@ async def _async_check_connection(
     ):
         return "cannot_connect"
 
-    except Exception:  # noqa: BLE001
+    except Exception:
         _LOGGER.exception(
             "Unexpected error while checking DWD radar service"
         )

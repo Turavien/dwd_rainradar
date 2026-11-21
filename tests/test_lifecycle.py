@@ -1,5 +1,7 @@
 """Test DWD Rain Radar config-entry lifecycle."""
 
+import asyncio
+from pathlib import Path
 from unittest.mock import (
     AsyncMock,
     MagicMock,
@@ -9,6 +11,7 @@ from unittest.mock import (
 import pytest
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 
 from custom_components.dwd_rainradar import (
     MyData,
@@ -320,3 +323,47 @@ async def test_unload_last_entry_shuts_down_shared_engine(
     engine.async_shutdown.assert_awaited_once_with()
 
     assert DOMAIN not in hass.data
+
+async def test_migration_gates_parallel_entries(hass: HomeAssistant) -> None:
+    """Both entries wait for the same migration before creating an engine."""
+    pending = hass.loop.create_future()
+    coordinator = MagicMock()
+    coordinator.async_config_entry_first_refresh = AsyncMock()
+    with (
+        patch("custom_components.dwd_rainradar.async_remove_disabled_entities", new_callable=AsyncMock),
+        patch.object(hass, "async_add_executor_job", return_value=pending) as submit,
+        patch("custom_components.dwd_rainradar.Engine") as engine,
+        patch("custom_components.dwd_rainradar.UpdateCoordinator", return_value=coordinator),
+        patch.object(hass.config_entries, "async_forward_entry_setups", new_callable=AsyncMock),
+    ):
+        entries = [asyncio.create_task(async_setup_entry(hass, MagicMock())) for _ in range(2)]
+        await asyncio.sleep(0)
+        submit.assert_called_once()
+        engine.assert_not_called()
+        pending.set_result(None)
+        assert all(await asyncio.gather(*entries))
+        engine.assert_called_once_with(hass)
+
+
+async def test_migration_error_is_retryable(hass: HomeAssistant, tmp_path: Path) -> None:
+    """An on-disk conflict blocks startup and a later attempt checks again."""
+    hass.config.config_dir = str(tmp_path)
+    source = tmp_path / DOMAIN
+    source.write_text("conflict")
+    coordinator = MagicMock()
+    coordinator.async_config_entry_first_refresh = AsyncMock()
+    with (
+        patch("custom_components.dwd_rainradar.async_remove_disabled_entities", new_callable=AsyncMock),
+        patch("custom_components.dwd_rainradar.Engine") as engine,
+        patch("custom_components.dwd_rainradar.UpdateCoordinator", return_value=coordinator),
+        patch.object(hass.config_entries, "async_forward_entry_setups", new_callable=AsyncMock),
+    ):
+        with pytest.raises(ConfigEntryNotReady) as raised:
+            await async_setup_entry(hass, MagicMock())
+        engine.assert_not_called()
+        assert raised.value.translation_key == "archive_migration_failed"
+        assert "archive directory" in raised.value.translation_placeholders["reason"]
+        assert source.read_text() == "conflict"
+        source.unlink()
+        assert await async_setup_entry(hass, MagicMock())
+        engine.assert_called_once_with(hass)

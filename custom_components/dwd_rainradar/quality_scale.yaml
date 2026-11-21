@@ -141,7 +141,7 @@ rules:
     status: done
     comment: |
       Config-flow errors are translated.
-      The integration currently exposes no custom user-facing HomeAssistantError exceptions.
+      Archive migration setup errors use a translated exception with the filesystem reason.
 
   icon-translations:
     status: done
@@ -153,10 +153,10 @@ rules:
   reconfiguration-flow: done
 
   repair-issues:
-    status: done
+    status: todo
     comment: |
-      There currently are no persistent user-remediable runtime conditions
-      that would benefit from a Home Assistant repair issue.
+      Conflicting archive files can require user intervention. Setup reports the
+      path and retries; a dedicated repair issue has not been implemented.
 
   stale-devices:
     status: done

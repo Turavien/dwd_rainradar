@@ -4,11 +4,15 @@
 # Substantially modified for DWD Rain Radar by Turavien, 2026.
 # SPDX-License-Identifier: Apache-2.0
 
+import asyncio
 from dataclasses import dataclass
+from pathlib import Path
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 
+from .cache_migration import migrate_archive
 from .coordinator import UpdateCoordinator
 from .engine import Engine
 from .const import (
@@ -48,6 +52,25 @@ async def async_setup_entry(
     engine = domain_data.get(
         "engine",
     )
+
+    if engine is None:
+        migration = domain_data.get("archive_migration")
+        if migration is None:
+            migration = hass.async_add_executor_job(
+                migrate_archive, Path(hass.config.config_dir)
+            )
+            domain_data["archive_migration"] = migration
+        try:
+            await asyncio.shield(migration)
+        except OSError as err:
+            if domain_data.get("archive_migration") is migration:
+                domain_data.pop("archive_migration")
+            raise ConfigEntryNotReady(
+                translation_domain=DOMAIN,
+                translation_key="archive_migration_failed",
+                translation_placeholders={"reason": str(err)},
+            ) from err
+        engine = domain_data.get("engine")
 
     if engine is None:
         engine = Engine(

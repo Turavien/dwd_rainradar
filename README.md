@@ -3,7 +3,7 @@
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 ![GitHub release](https://img.shields.io/github/v/release/Turavien/dwd_rainradar)
 ![GitHub last commit](https://img.shields.io/github/last-commit/Turavien/dwd_rainradar)
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.3%2B-18BCF2?logo=homeassistant&logoColor=white)](https://www.home-assistant.io/)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.3.0%2B-18BCF2?logo=homeassistant&logoColor=white)](https://www.home-assistant.io/)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)
 
 [![Open your Home Assistant instance and open the repository inside HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Turavien&repository=dwd_rainradar)
@@ -203,7 +203,11 @@ The 30-second coordinator interval is also required so that the real-time RV ent
 
 ### RW history and backfill
 
-RADOLAN RW files are stored locally under `/config/dwd_rainradar`. The integration maintains the history required to calculate rolling precipitation totals.
+RADOLAN RW files are stored locally under `/config/.cache/dwd_rainradar`. The integration maintains the history required to calculate rolling precipitation totals.
+
+On upgrade, the integration automatically moves the entire existing radar archive from `/config/dwd_rainradar` before the first update.
+
+If migration stops, Home Assistant reports the affected path. For a content conflict, save both files, compare them, and resolve the conflict before reloading the entry. When copying across filesystems, the destination must support unnamed temporary files and atomic publication by hard link.
 
 After initial setup or when historical intervals are missing, available RW products are downloaded in the background. Backfill processing is independent of current sensor updates and does not block the Home Assistant event loop.
 
@@ -300,7 +304,7 @@ After the restart:
 
 The integration can be removed from **Settings → Devices & Services → DWD Rain Radar** using the menu of the corresponding entry.
 
-Locally stored radar data remains in `/config/dwd_rainradar`. If all integration entries have been removed and the data is no longer needed, this directory can be deleted manually.
+Locally stored radar data remains in `/config/.cache/dwd_rainradar`. If all integration entries have been removed and the data is no longer needed, this directory can be deleted manually.
 
 ## Project History
 
