@@ -148,16 +148,20 @@ jobs:
       matrix:
         include:
 
-          - name: HA 2025.3.0 / Python 3.13.2
+          - role: min
+            name: min - HA 2025.3.0 / Python 3.13.2
             runner: ubuntu-24.04
             python-version: "3.13.2"
             pytest-ha-version: "0.13.221"
+            ha-version: "2025.3.0"
             coverage: false
 
-          - name: HA 2026.8.3 / Python 3.14.6
+          - role: dev
+            name: dev - HA 2026.11.2 / Python 3.14.6
             runner: ubuntu-latest
             python-version: "3.14.6"
-            pytest-ha-version: "0.13.357"
+            pytest-ha-version: "0.13.375"
+            ha-version: "2026.11.2"
             coverage: true
 
     env:
@@ -174,16 +178,53 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install test dependencies
+      - name: Install minimum-version test dependencies
+        if: matrix.role == 'min'
         run: |
           python -m pip install \
               --disable-pip-version-check \
               "pytest-homeassistant-custom-component==${{ matrix.pytest-ha-version }}" \
               "h5py==3.16.0"
 
-      - name: Show test environment
+      - name: Install dev test dependencies
+        if: matrix.role == 'dev'
+        env:
+          HA_VERSION: ${{ matrix.ha-version }}
+          UV_LINK_MODE: copy
+          FIXTURE_VERSION: ${{ matrix.pytest-ha-version }}
+        run: |
+          python -m pip install "uv==0.13.9"
+          printf 'homeassistant==%s\n' "$HA_VERSION" > "$RUNNER_TEMP/ha-dev-override.txt"
+          uv pip install --python "$(command -v python)" \
+            --override "$RUNNER_TEMP/ha-dev-override.txt" \
+            "pytest-homeassistant-custom-component==$FIXTURE_VERSION" \
+            "h5py==3.16.0"
+
+      # Fixture 0.13.375 targets Core 2026.10.4. In 2026.11 the logger
+      # test helper moved to helpers.py. Remove this when the fixture catches up.
+      - name: Adapt dev test fixture to Core 2026.11
+        if: matrix.role == 'dev'
+        run: |
+          python - <<'PYTHON'
+          from importlib.metadata import distribution
+          from pathlib import Path
+
+          fixture = distribution("pytest-homeassistant-custom-component")
+          path = Path(fixture.locate_file("pytest_homeassistant_custom_component/common.py"))
+          original = path.read_text()
+          old = "    _clear_logger_overwrites,\n)"
+          new = ")\nfrom homeassistant.components.logger.helpers import _clear_logger_overwrites"
+          if fixture.version != "0.13.375" or original.count(old) != 1:
+              raise SystemExit("Review the dev fixture compatibility step")
+          path.write_text(original.replace(old, new))
+          PYTHON
+
+      - name: Verify and show test environment
+        env:
+          EXPECTED_HA: ${{ matrix.ha-version }}
         run: |
           python - <<'PY'
+          import os
           import sys
           from importlib.metadata import version
 
@@ -192,6 +233,10 @@ jobs:
               "Python:",
               sys.version,
           )
+
+          expected = os.environ["EXPECTED_HA"]
+          if version("homeassistant") != expected:
+              raise SystemExit(f"Expected Home Assistant {expected}, got {version('homeassistant')}")
 
           for package in (
               "homeassistant",
@@ -227,7 +272,8 @@ jobs:
         env:
           COVERAGE_FILE: /tmp/dwd-rainradar.coverage
         run: |
-          python -m pytest \
+          # Core registers its HTTP client alias before pytest loads plugins.
+          python -c 'import homeassistant, pytest; raise SystemExit(pytest.main())' \
               -p no:cacheprovider \
               --basetemp=/tmp/dwd-rainradar-pytest \
               --cov=custom_components.dwd_rainradar \
