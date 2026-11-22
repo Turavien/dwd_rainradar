@@ -149,6 +149,7 @@ rules:
       Sensor entities use Home Assistant device-class icons where appropriate.
       The precipitation-active binary sensor uses an icon translation because
       no binary-sensor device class accurately represents active precipitation.
+      The HymecNG enum publishes the current precipitation icon with its state.
 
   reconfiguration-flow: done
 

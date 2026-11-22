@@ -506,3 +506,22 @@ def test_product_freshness_uses_publication_timing() -> None:
     ).is_product_fresh(
         RV,
     )
+
+
+@pytest.mark.parametrize(("overrides", "missing", "minute", "expected"), [
+    ({}, (), 3, "none_expected"),
+    ({0: 0.01}, (), 3, "active"),
+    ({115: 0.1}, (), 3, "expected"),
+    ({0: None, 25: 0.1}, (), 3, "expected"),
+    ({0: None}, (), 3, None),
+    ({}, (45,), 3, None),
+    ({}, (0,), 3, None),
+    ({}, (115,), 3, None),
+    ({}, (), 120, None),
+    ({0: None}, (), 5, "none_expected"),
+])
+def test_rv_outlook(overrides, missing, minute, expected):
+    values = tuple(_rv_value(i, i + 5, overrides.get(i, 0)) for i in range(0, 120, 5) if i not in missing)
+    state = _state(BASE_TIME + timedelta(minutes=minute), values)
+    assert state.precipitation_outlook == expected
+    assert _state(BASE_TIME, ()).precipitation_outlook is None

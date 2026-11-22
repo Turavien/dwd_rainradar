@@ -320,6 +320,8 @@ async def test_failed_store_does_not_commit_product_markers() -> None:
         etag="new-etag",
     )
 
+    engine._grid_cell_references = {GRID_CELL: 1}
+    engine._snapshots = {}
     engine._forecast_products = (
         RV,
     )
@@ -333,8 +335,8 @@ async def test_failed_store_does_not_commit_product_markers() -> None:
     }
 
     engine._decoder = MagicMock()
-    engine._decoder.async_decode = AsyncMock(
-        return_value=DecodedProduct(
+    engine._decoder.async_decode_cells = AsyncMock(
+        return_value={GRID_CELL: DecodedProduct(
             product=RV,
             metadata=new_metadata,
             values=(
@@ -345,7 +347,7 @@ async def test_failed_store_does_not_commit_product_markers() -> None:
                     value=0.0,
                 ),
             ),
-        )
+        )}
     )
 
     engine._storage = MagicMock()
@@ -414,6 +416,7 @@ async def test_failed_rw_store_does_not_commit_product_markers() -> None:
         etag="new-etag",
     )
 
+    engine._snapshots = {}
     engine._forecast_products = ()
     engine._latest_product_timestamps = {
         RW.key: old_timestamp,
@@ -628,6 +631,7 @@ def test_grid_cell_and_callback_registration() -> None:
         Engine,
     )
 
+    engine._snapshots = {}
     engine._grid_cell_references = {}
 
     engine._state_cache = {
@@ -683,14 +687,16 @@ def test_grid_cell_and_callback_registration() -> None:
         GRID_CELL: 1,
     }
 
-    assert GRID_CELL not in engine._state_cache
-    assert engine._rolling_cache_anchor is None
-    assert engine._rolling_cache_grid_cells == ()
-    assert engine._rolling_cache == {}
+    assert GRID_CELL in engine._state_cache
 
     engine.unregister_grid_cell(
         GRID_CELL,
     )
+
+    assert GRID_CELL not in engine._state_cache
+    assert engine._rolling_cache_anchor is None
+    assert engine._rolling_cache_grid_cells == ()
+    assert engine._rolling_cache == {}
 
     assert engine._grid_cell_references == {}
 
@@ -768,6 +774,7 @@ async def test_shutdown_cancels_background_tasks() -> None:
         task,
     }
 
+    engine.hymec = AsyncMock()
     await engine.async_shutdown()
 
     assert task.cancelled()
@@ -935,6 +942,7 @@ async def test_build_state_recovers_missing_cached_products() -> None:
         ),
     )
 
+    engine._snapshots = {}
     engine._forecast_products = (
         RV,
     )
@@ -960,15 +968,9 @@ async def test_build_state_recovers_missing_cached_products() -> None:
 
     engine._decoder = MagicMock()
 
-    engine._decoder.async_decode = AsyncMock(
-        return_value=rv_decoded,
-    )
-
     engine._decoder.async_decode_cells = AsyncMock(
-        return_value={
-            GRID_CELL: rw_decoded,
-            OTHER_GRID_CELL: other_rw_decoded,
-        }
+        side_effect=[{GRID_CELL: rv_decoded, OTHER_GRID_CELL: rv_decoded},
+                     {GRID_CELL: rw_decoded, OTHER_GRID_CELL: other_rw_decoded}]
     )
 
     engine._history = MagicMock()
@@ -1187,6 +1189,7 @@ async def test_build_state_reuses_cached_products_and_rolling_data() -> None:
         ),
     )
 
+    engine._snapshots = {}
     engine._forecast_products = (
         RV,
     )
@@ -1207,14 +1210,8 @@ async def test_build_state_reuses_cached_products_and_rolling_data() -> None:
 
     engine._decoder = MagicMock()
 
-    engine._decoder.async_decode = AsyncMock(
-        return_value=rv_decoded,
-    )
-
     engine._decoder.async_decode_cells = AsyncMock(
-        return_value={
-            GRID_CELL: rw_decoded,
-        }
+        side_effect=[{GRID_CELL: rv_decoded}, {GRID_CELL: rw_decoded}]
     )
 
     engine._history = MagicMock()
@@ -1462,3 +1459,57 @@ def test_engine_diagnostics_are_non_sensitive() -> None:
     assert repr(
         OTHER_GRID_CELL
     ) not in diagnostic_text
+
+
+@pytest.mark.parametrize("count", [1, 4, 13])
+async def test_shared_snapshots_only_decode_changed_products(hass, count):
+    """Measure work per product, including same-time revisions and clock ticks."""
+    engine = Engine(hass)
+    cells = tuple((0, i) for i in range(count))
+    stamp = datetime(2026, 11, 22, tzinfo=UTC)
+    products = (RS, RV, RW)
+    changed = set(products)
+    revision = 0
+
+    async def fetch():
+        results = {
+            p.key: FetchResult(p, p in changed, stamp, metadata=ProductMetadata(etag=str(revision)))
+            for p in products
+        }
+        changed.clear()
+        return results
+
+    async def decode(result, requested):
+        return {
+            cell: DecodedProduct(result.product, result.metadata, (
+                ParsedValue(stamp, stamp, stamp, cell[1] + revision),
+            )) for cell in requested
+        }
+
+    engine._async_fetch_latest_products = fetch
+    engine._decoder.async_decode_cells = AsyncMock(side_effect=decode)
+    engine._storage = AsyncMock()
+    engine._history = AsyncMock()
+    engine._history.rolling_summaries_cells.return_value = {}
+    engine._start_backfill = MagicMock(return_value=True)
+    for cell in cells:
+        engine.register_grid_cell(cell)
+    for cell in cells:
+        state = await engine.async_update(cell)
+        assert state.rw[0].value == cell[1]
+    assert engine._decoder.async_decode_cells.await_count == 3
+    for call in engine._decoder.async_decode_cells.await_args_list:
+        assert call.args[1] == cells
+
+    revision += 1
+    changed.add(RV)
+    for cell in cells:
+        state = await engine.async_update(cell)
+        assert state._products[RV.key].values[0].value == cell[1] + 1
+        assert state.rw[0].value == cell[1]
+        await engine.async_update(cell)
+    assert engine._decoder.async_decode_cells.await_count == 4
+    engine._history.rolling_summaries_cells.assert_awaited_once()
+    for cell in cells:
+        engine.unregister_grid_cell(cell)
+    assert all(not values for values in engine._snapshots.values())

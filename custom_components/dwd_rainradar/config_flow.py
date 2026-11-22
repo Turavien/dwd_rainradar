@@ -17,17 +17,13 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
+from homeassistant.helpers.translation import async_get_translations
 
 from .const import (
     CONF_COORDS,
     CONF_SENSOR_GROUPS,
     DEFAULT_SENSOR_GROUPS,
     DOMAIN,
-    SENSOR_GROUP_CURRENT,
-    SENSOR_GROUP_EVENT,
-    SENSOR_GROUP_FORECAST,
-    SENSOR_GROUP_HISTORY,
-    SENSOR_GROUP_ROLLING,
 )
 from .fetcher import Fetcher
 from .radar import get_dwd_grid_cell
@@ -35,21 +31,22 @@ from .radar import get_dwd_grid_cell
 _LOGGER = logging.getLogger(__name__)
 
 
-def _sensor_group_selector(
+async def _sensor_group_selector(
+    hass: HomeAssistant,
 ) -> selector.SelectSelector:
-    """Return the sensor group selector."""
+    """Provide readable form labels even with an older frontend translation cache."""
+    translations = await async_get_translations(hass, hass.config.language, "selector", [DOMAIN])
+    prefix = f"component.{DOMAIN}.selector.sensor_groups.options."
+    options = [
+        {"value": group, "label": translations[prefix + group]}
+        for group in DEFAULT_SENSOR_GROUPS
+    ]
 
     return selector.SelectSelector(
         selector.SelectSelectorConfig(
             multiple=True,
             mode=selector.SelectSelectorMode.LIST,
-            options=[
-                SENSOR_GROUP_CURRENT,
-                SENSOR_GROUP_FORECAST,
-                SENSOR_GROUP_EVENT,
-                SENSOR_GROUP_HISTORY,
-                SENSOR_GROUP_ROLLING,
-            ],
+            options=options,
             translation_key="sensor_groups",
         ),
     )
@@ -149,7 +146,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    MINOR_VERSION = 5
+    MINOR_VERSION = 6
 
     def __init__(
         self,
@@ -232,7 +229,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(
                         CONF_SENSOR_GROUPS,
                         default=DEFAULT_SENSOR_GROUPS,
-                    ): _sensor_group_selector(),
+                    ): await _sensor_group_selector(self.hass),
                 }
             ),
             description_placeholders={},
@@ -406,7 +403,7 @@ class OptionsFlow(config_entries.OptionsFlow):
                     vol.Required(
                         CONF_SENSOR_GROUPS,
                         default=enabled_groups,
-                    ): _sensor_group_selector(),
+                    ): await _sensor_group_selector(self.hass),
                 }
             ),
         )

@@ -11,7 +11,7 @@ from .models import (
     ParsedValue,
 )
 from .parser import Parser
-from .products import FileType
+from .products import FileType, HYMEC
 
 
 class Decoder:
@@ -67,150 +67,45 @@ class Decoder:
     ) -> DecodedProduct:
         """Decode one DWD product for one grid cell."""
 
-        if result.data is None:
-            raise ValueError(
-                "FetchResult contains no data.",
-            )
-
-        if result.product.file_type is FileType.HDF5:
-
-            values = self._parser.read(
-                result.data,
-                grid_cell,
-            )
-
-            if not values:
-                raise ValueError(
-                    f"{result.product.key} contains no values."
-                )
-
-            if result.timestamp is None:
-                result.timestamp = values[0].timestamp
-
-            result.valid_from = values[0].valid_from
-            result.valid_until = values[0].valid_until
-
-            return self._build_decoded_product(
-                result,
-                values,
-            )
-
-        if result.product.file_type is FileType.TAR:
-            return self._decode_tar(
-                result,
-                grid_cell,
-            )
-
-        raise ValueError(
-            f"Unsupported file type: "
-            f"{result.product.file_type}"
-        )
+        return self.decode_cells(result, (grid_cell,))[grid_cell]
 
     def decode_cells(
         self,
         result: FetchResult,
-        grid_cells: tuple[
-            tuple[int, int],
-            ...
-        ],
-    ) -> dict[
-        tuple[int, int],
-        DecodedProduct,
-    ]:
-        """Decode one HDF5 product for multiple grid cells."""
-
+        grid_cells: tuple[tuple[int, int], ...],
+    ) -> dict[tuple[int, int], DecodedProduct]:
+        """Decode all requested cells during one pass through the product."""
         if result.data is None:
-            raise ValueError(
-                "FetchResult contains no data.",
+            raise ValueError("FetchResult contains no data.")
+        if result.product.file_type is FileType.TAR:
+            frames = self._extractor.extract(result.data).values()
+        elif result.product.file_type is FileType.HDF5:
+            frames = (result.data,)
+        else:
+            raise ValueError(f"Unsupported file type: {result.product.file_type}")
+
+        series: dict[tuple[int, int], list[ParsedValue]] = {}
+        for frame in frames:
+            values = self._parser.read_cells(
+                frame, grid_cells, categorical=result.product == HYMEC,
             )
+            for cell, value in values.items():
+                series.setdefault(cell, []).append(value)
 
-        if result.product.file_type is not FileType.HDF5:
-            raise ValueError(
-                "Multiple grid-cell decoding is only supported for HDF5."
+        if not series:
+            raise ValueError(f"{result.product.key} contains no values.")
+
+        decoded = {
+            cell: DecodedProduct(
+                product=result.product,
+                metadata=result.metadata,
+                values=tuple(sorted(values, key=lambda value: value.valid_from)),
             )
-
-        values_by_cell = self._parser.read_cells(
-            result.data,
-            grid_cells,
-        )
-
-        if not values_by_cell:
-            raise ValueError(
-                f"{result.product.key} contains no values."
-            )
-
-        first_value = next(
-            iter(
-                values_by_cell.values(),
-            ),
-        )
-
-        if result.timestamp is None:
-            result.timestamp = first_value.timestamp
-
-        result.valid_from = first_value.valid_from
-        result.valid_until = first_value.valid_until
-
-        return {
-            grid_cell: self._build_decoded_product(
-                result,
-                (value,),
-            )
-            for grid_cell, value in values_by_cell.items()
+            for cell, values in series.items()
         }
-
-    def _decode_tar(
-        self,
-        result: FetchResult,
-        grid_cell: tuple[int, int],
-    ) -> DecodedProduct:
-        """Decode one TAR product."""
-
-        values: list[ParsedValue] = []
-
-        files = self._extractor.extract(
-            result.data,
-        )
-
-        for filename in sorted(files):
-
-            values.extend(
-                self._parser.read(
-                    files[filename],
-                    grid_cell,
-                ),
-            )
-
-        if not values:
-            raise ValueError(
-                f"{result.product.key} contains no values."
-            )
-
-        values.sort(
-            key=lambda value: value.valid_from,
-        )
-
+        first_series = next(iter(decoded.values())).values
         if result.timestamp is None:
-            result.timestamp = values[0].timestamp
-
-        result.valid_from = values[0].valid_from
-        result.valid_until = values[-1].valid_until
-
-        return self._build_decoded_product(
-            result,
-            tuple(values),
-        )
-
-    def _build_decoded_product(
-        self,
-        result: FetchResult,
-        values: tuple[ParsedValue, ...],
-    ) -> DecodedProduct:
-        """Build a decoded product."""
-
-        return DecodedProduct(
-            product=result.product,
-            metadata=result.metadata,
-            values=values,
-        )
-
+            result.timestamp = first_series[0].timestamp
+        result.valid_from = first_series[0].valid_from
+        result.valid_until = first_series[-1].valid_until
+        return decoded

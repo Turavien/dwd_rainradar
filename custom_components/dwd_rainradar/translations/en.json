@@ -16,7 +16,7 @@
       },
       "sensor_groups": {
         "title": "Select sensor groups",
-        "description": "Select which sensor groups should be created.\n\nNote: Rolling precipitation totals are calculated from RADOLAN RW.",
+        "description": "Select which sensor groups should be created.\n\nHymecNG shows which type of precipitation DWD detects near the ground at this location. Rolling precipitation totals come from RADOLAN RW.",
         "data": {
           "sensor_groups": "Sensor groups"
         },
@@ -53,7 +53,7 @@
     "step": {
       "init": {
         "title": "Select sensor groups",
-        "description": "Select which sensor groups should be created.\n\nNote: Rolling precipitation totals are calculated from RADOLAN RW.",
+        "description": "Select which sensor groups should be created.\n\nHymecNG shows which type of precipitation DWD detects near the ground at this location. Rolling precipitation totals come from RADOLAN RW.",
         "data": {
           "sensor_groups": "Sensor groups"
         },
@@ -67,10 +67,11 @@
     "sensor_groups": {
       "options": {
         "current": "Intensity (now, +5, +10, +15 min, maximum next 2 h)",
-        "event": "Precipitation event (active, next precipitation)",
+        "event": "Precipitation event (active, next precipitation, outlook)",
         "forecast": "Forecast totals (next 1 and 2 h)",
         "history": "Total last 1 h",
-        "rolling": "Rolling totals (last 2–48 h)"
+        "rolling": "Rolling totals (last 2–48 h)",
+        "precipitation_type": "Current precipitation type (e.g. rain, snow or hail)"
       }
     }
   },
@@ -131,6 +132,31 @@
       },
       "maximum_precipitation_intensity": {
         "name": "Max. expected intensity next 2 h"
+      },
+      "precipitation_type": {
+        "name": "Current precipitation type",
+        "state": {
+          "no_precipitation": "No precipitation",
+          "unclassified": "Unclassified",
+          "drizzle": "Drizzle",
+          "rain": "Rain",
+          "freezing_drizzle": "Freezing drizzle",
+          "freezing_rain": "Freezing rain",
+          "rain_and_snow": "Rain and snow",
+          "snow": "Snow",
+          "graupel": "Graupel",
+          "small_hail": "Small hail",
+          "large_hail": "Large hail",
+          "no_precipitation_detected": "No precipitation detected"
+        }
+      },
+      "precipitation_outlook": {
+        "name": "Precipitation outlook",
+        "state": {
+          "active": "Precipitation now",
+          "expected": "Precipitation expected",
+          "none_expected": "No precipitation expected"
+        }
       }
     },
     "binary_sensor": {

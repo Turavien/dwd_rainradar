@@ -18,6 +18,7 @@ from .engine import Engine
 from .const import (
     CONF_SENSOR_GROUPS,
     DEFAULT_SENSOR_GROUPS,
+    SENSOR_GROUP_TYPE,
     DOMAIN,
     PLATFORMS,
 )
@@ -122,42 +123,25 @@ async def async_migrate_entry(
 ) -> bool:
     """Migrate old config entries."""
 
-    data = dict(
-        entry.data
-    )
+    if entry.version != 1:
+        return False
+    if entry.minor_version >= 6:
+        return True
 
-    options = dict(
-        entry.options
-    )
-
-    if entry.minor_version < 2:
-
-        data.setdefault(
-            CONF_SENSOR_GROUPS,
-            DEFAULT_SENSOR_GROUPS,
-        )
-
-    if entry.minor_version < 5:
-
-        sensor_groups = data.pop(
-            CONF_SENSOR_GROUPS,
-            options.get(
-                CONF_SENSOR_GROUPS,
-                DEFAULT_SENSOR_GROUPS,
-            ),
-        )
-
-        options.setdefault(
-            CONF_SENSOR_GROUPS,
-            sensor_groups,
-        )
+    data = dict(entry.data)
+    options = dict(entry.options)
+    previous = data.pop(CONF_SENSOR_GROUPS, DEFAULT_SENSOR_GROUPS)
+    groups = list(options.get(CONF_SENSOR_GROUPS, previous))
+    if SENSOR_GROUP_TYPE not in groups:
+        groups.append(SENSOR_GROUP_TYPE)
+    options[CONF_SENSOR_GROUPS] = groups
 
     hass.config_entries.async_update_entry(
         entry,
         data=data,
         options=options,
-        unique_id=None,
-        minor_version=5,
+        unique_id=None if entry.minor_version < 5 else entry.unique_id,
+        minor_version=6,
     )
 
     return True

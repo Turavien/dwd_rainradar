@@ -122,3 +122,34 @@ RV = Product(
     publication_delay=timedelta(minutes=3),
     retention=timedelta(hours=6),
 )
+
+
+HYMEC = Product(
+    key="hymecng",
+    base_url=DWD_RADVOR_URL,
+    file_type=FileType.HDF5,
+    download_directory="hymecng",
+    latest_filename="composite_HymecNG_LATEST_000-hd5",
+    file_extension="hdf5",
+    interval=timedelta(minutes=5),
+    publication_interval=timedelta(minutes=5),
+    publication_delay=timedelta(minutes=3),
+    retention=timedelta(0),
+)
+
+# HymecNG ODIM CLASS legend plus the undetect marker.
+HYMEC_UNDETECT = 254
+PRECIPITATION_TYPES = {
+    0: "no_precipitation",
+    1: "unclassified",
+    2: "drizzle",
+    3: "rain",
+    4: "freezing_drizzle",
+    5: "freezing_rain",
+    6: "rain_and_snow",
+    7: "snow",
+    8: "graupel",
+    9: "small_hail",
+    10: "large_hail",
+    HYMEC_UNDETECT: "no_precipitation_detected",
+}

@@ -12,6 +12,7 @@ from io import BytesIO
 import h5py
 
 from .models import ParsedValue
+from .products import HYMEC_UNDETECT, PRECIPITATION_TYPES
 
 
 def _text_attribute(
@@ -56,131 +57,58 @@ class Parser:
     def read_cells(
         self,
         data: bytes,
-        grid_cells: tuple[
-            tuple[int, int],
-            ...
-        ],
-    ) -> dict[
-        tuple[int, int],
-        ParsedValue,
-    ]:
-        """Read precipitation values for multiple grid cells."""
+        grid_cells: tuple[tuple[int, int], ...],
+        *,
+        categorical: bool = False,
+    ) -> dict[tuple[int, int], ParsedValue]:
+        """Open one frame and share its metadata and chunk cache across cells."""
 
-        with h5py.File(
-            BytesIO(data),
-            "r",
-        ) as hdf5:
-
+        with h5py.File(BytesIO(data), "r") as hdf5:
             try:
-                dataset = hdf5["dataset1"]["data1"]
+                group = hdf5["dataset1/data1"]
+                raster = group["data"]
+                attrs = group["what"].attrs
+                product = hdf5["what"].attrs
+                interval = hdf5["dataset1/what"].attrs
+                timestamp = _timestamp(product, "")
+                start = _timestamp(interval, "start")
+                end = _timestamp(interval, "end")
+                nodata = float(attrs["nodata"])
+                undetect = float(attrs["undetect"])
+                if categorical:
+                    if _text_attribute(attrs["quantity"]) != "CLASS":
+                        raise ValueError("Expected a HymecNG CLASS raster.")
+                    if (
+                        _text_attribute(interval["prodname"]) != "HymecNG_top_view"
+                        or raster.shape != (1200, 1100)
+                    ):
+                        raise ValueError("Unsupported HymecNG product or grid.")
+                else:
+                    gain = float(attrs["gain"])
+                    offset = float(attrs["offset"])
             except KeyError as err:
-                raise ValueError(
-                    "Unsupported DWD HDF5 structure."
-                ) from err
+                raise ValueError("Unsupported DWD HDF5 structure.") from err
 
-            return {
-                grid_cell: self._read_dataset(
-                    hdf5,
-                    dataset,
-                    grid_cell,
-                )
-                for grid_cell in grid_cells
-            }
+            values = {}
+            for cell in grid_cells:
+                raw = float(raster[cell])
+                if raw == nodata:
+                    value = None
+                elif categorical:
+                    if raw == undetect:
+                        value = HYMEC_UNDETECT
+                    else:
+                        value = raw if raw in PRECIPITATION_TYPES and raw != HYMEC_UNDETECT else None
+                elif raw == undetect:
+                    value = 0.0
+                else:
+                    value = max(raw * gain + offset, 0.0)
+                values[cell] = ParsedValue(timestamp, start, end, value)
+            return values
 
-    def _read_dataset(
-        self,
-        hdf5: h5py.File,
-        dataset: h5py.Group,
-        grid_cell: tuple[int, int],
-    ) -> ParsedValue:
-        """Read one value from a DWD dataset."""
 
-        selection = dataset["data"][grid_cell]
-
-        raw_value = float(
-            selection
-        )
-
-        dataset_what = dataset["what"].attrs
-        interval_what = hdf5["dataset1"]["what"].attrs
-        product_what = hdf5["what"].attrs
-
-        gain = float(
-            dataset_what["gain"]
-        )
-
-        offset = float(
-            dataset_what["offset"]
-        )
-
-        nodata = float(
-            dataset_what["nodata"]
-        )
-
-        undetect = float(
-            dataset_what["undetect"]
-        )
-
-        date = _text_attribute(
-            product_what["date"]
-        )
-
-        time = _text_attribute(
-            product_what["time"]
-        )
-
-        start_date = _text_attribute(
-            interval_what["startdate"]
-        )
-
-        start_time = _text_attribute(
-            interval_what["starttime"]
-        )
-
-        end_date = _text_attribute(
-            interval_what["enddate"]
-        )
-
-        end_time = _text_attribute(
-            interval_what["endtime"]
-        )
-
-        timestamp = datetime.strptime(
-            f"{date}{time}",
-            "%Y%m%d%H%M%S",
-        ).replace(
-            tzinfo=UTC,
-        )
-
-        valid_from = datetime.strptime(
-            f"{start_date}{start_time}",
-            "%Y%m%d%H%M%S",
-        ).replace(
-            tzinfo=UTC,
-        )
-
-        valid_until = datetime.strptime(
-            f"{end_date}{end_time}",
-            "%Y%m%d%H%M%S",
-        ).replace(
-            tzinfo=UTC,
-        )
-
-        if raw_value == nodata:
-            value = None
-
-        elif raw_value == undetect:
-            value = 0.0
-
-        else:
-            value = max(
-                (raw_value * gain) + offset,
-                0.0,
-            )
-
-        return ParsedValue(
-            timestamp=timestamp,
-            valid_from=valid_from,
-            valid_until=valid_until,
-            value=value,
-        )
+def _timestamp(attrs: h5py.AttributeManager, prefix: str) -> datetime:
+    """Read an ODIM date/time pair as UTC."""
+    date = _text_attribute(attrs[f"{prefix}date"])
+    time = _text_attribute(attrs[f"{prefix}time"])
+    return datetime.strptime(date + time, "%Y%m%d%H%M%S").replace(tzinfo=UTC)

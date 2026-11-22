@@ -16,7 +16,7 @@
       },
       "sensor_groups": {
         "title": "Sensorgruppen auswählen",
-        "description": "Wähle aus, welche Sensorgruppen angelegt werden sollen.\n\nHinweis: Die rollierenden Niederschlagssummen werden aus RADOLAN-RW berechnet.",
+        "description": "Wähle aus, welche Sensorgruppen angelegt werden sollen.\n\nHymecNG zeigt für diesen Standort an, welche Niederschlagsart der DWD in Bodennähe erkennt. Die rollierenden Niederschlagssummen stammen aus RADOLAN-RW.",
         "data": {
           "sensor_groups": "Sensorgruppen"
         },
@@ -53,7 +53,7 @@
     "step": {
       "init": {
         "title": "Sensorgruppen auswählen",
-        "description": "Wähle aus, welche Sensorgruppen angelegt werden sollen.\n\nHinweis: Die rollierenden Niederschlagssummen werden aus RADOLAN-RW berechnet.",
+        "description": "Wähle aus, welche Sensorgruppen angelegt werden sollen.\n\nHymecNG zeigt für diesen Standort an, welche Niederschlagsart der DWD in Bodennähe erkennt. Die rollierenden Niederschlagssummen stammen aus RADOLAN-RW.",
         "data": {
           "sensor_groups": "Sensorgruppen"
         },
@@ -67,10 +67,11 @@
     "sensor_groups": {
       "options": {
         "current": "Intensitäten (jetzt, +5, +10, +15 Min, Maximum nächste 2 Std)",
-        "event": "Niederschlagsereignis (aktiv, nächster Niederschlag)",
+        "event": "Niederschlagsereignis (aktiv, nächster Niederschlag, Ausblick)",
         "forecast": "Vorhersagemengen (nächste 1 und 2 Std)",
         "history": "Menge letzte 1 Std",
-        "rolling": "Rollierende Mengen (letzte 2–48 Std)"
+        "rolling": "Rollierende Mengen (letzte 2–48 Std)",
+        "precipitation_type": "Aktuelle Niederschlagsart (z. B. Regen, Schnee oder Hagel)"
       }
     }
   },
@@ -131,6 +132,31 @@
       },
       "maximum_precipitation_intensity": {
         "name": "Max. erwartete Intensität nächste 2 Std"
+      },
+      "precipitation_type": {
+        "name": "Aktuelle Niederschlagsart",
+        "state": {
+          "no_precipitation": "Kein Niederschlag",
+          "unclassified": "Nicht klassifiziert",
+          "drizzle": "Sprühregen",
+          "rain": "Regen",
+          "freezing_drizzle": "Gefrierender Sprühregen",
+          "freezing_rain": "Gefrierender Regen",
+          "rain_and_snow": "Schneeregen",
+          "snow": "Schnee",
+          "graupel": "Graupel",
+          "small_hail": "Kleiner Hagel",
+          "large_hail": "Großer Hagel",
+          "no_precipitation_detected": "Kein Niederschlag erkannt"
+        }
+      },
+      "precipitation_outlook": {
+        "name": "Niederschlagsausblick",
+        "state": {
+          "active": "Niederschlag aktiv",
+          "expected": "Niederschlag erwartet",
+          "none_expected": "Kein Niederschlag erwartet"
+        }
       }
     },
     "binary_sensor": {

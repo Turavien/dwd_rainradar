@@ -11,6 +11,7 @@ from custom_components.dwd_rainradar.const import (
     DOMAIN,
     SENSOR_GROUP_CURRENT,
     SENSOR_GROUP_EVENT,
+    SENSOR_GROUP_TYPE,
 )
 
 
@@ -43,9 +44,9 @@ async def test_migrate_minor_4_sensor_groups_to_options(
         entry,
     )
 
-    assert entry.minor_version == 5
+    assert entry.minor_version == 6
     assert CONF_SENSOR_GROUPS not in entry.data
-    assert entry.options[CONF_SENSOR_GROUPS] == selected_groups
+    assert entry.options[CONF_SENSOR_GROUPS] == [*selected_groups, SENSOR_GROUP_TYPE]
 
 
 async def test_migrate_old_entry_adds_default_groups(
@@ -71,7 +72,7 @@ async def test_migrate_old_entry_adds_default_groups(
         entry,
     )
 
-    assert entry.minor_version == 5
+    assert entry.minor_version == 6
     assert CONF_SENSOR_GROUPS not in entry.data
     assert entry.options[CONF_SENSOR_GROUPS] == DEFAULT_SENSOR_GROUPS
 
@@ -103,9 +104,9 @@ async def test_migration_preserves_existing_options(
         entry,
     )
 
-    assert entry.minor_version == 5
+    assert entry.minor_version == 6
     assert CONF_SENSOR_GROUPS not in entry.data
-    assert entry.options[CONF_SENSOR_GROUPS] == [SENSOR_GROUP_EVENT]
+    assert entry.options[CONF_SENSOR_GROUPS] == [SENSOR_GROUP_EVENT, SENSOR_GROUP_TYPE]
 
 
 async def test_config_entry_setup_runs_migration(
@@ -140,15 +141,41 @@ async def test_config_entry_setup_runs_migration(
 
     await hass.async_block_till_done()
 
-    assert entry.minor_version == 5
+    assert entry.minor_version == 6
 
     assert CONF_SENSOR_GROUPS not in entry.data
 
     assert entry.options[
         CONF_SENSOR_GROUPS
-    ] == selected_groups
+    ] == [*selected_groups, SENSOR_GROUP_TYPE]
 
     mock_setup_entry.assert_awaited_once_with(
         hass,
         entry,
     )
+
+
+async def test_hymec_upgrade_is_once_per_entry(hass: HomeAssistant) -> None:
+    """Preserve explicit selections, unrelated options and a subsequent opt-out."""
+    for selected in ([], [SENSOR_GROUP_EVENT], [SENSOR_GROUP_TYPE]):
+        entry = MockConfigEntry(
+            domain=DOMAIN, version=1, minor_version=5, unique_id="id-" + str(len(hass.config_entries.async_entries(DOMAIN))),
+            options={CONF_SENSOR_GROUPS: selected, "other": 123},
+        )
+        entry.add_to_hass(hass)
+        unique_id = entry.unique_id
+        assert await async_migrate_entry(hass, entry)
+        assert entry.unique_id == unique_id
+        assert entry.options == {
+            CONF_SENSOR_GROUPS: list(dict.fromkeys([*selected, SENSOR_GROUP_TYPE])), "other": 123,
+        }
+        hass.config_entries.async_update_entry(entry, options={CONF_SENSOR_GROUPS: []})
+        assert await async_migrate_entry(hass, entry)
+        assert entry.options[CONF_SENSOR_GROUPS] == []
+
+
+async def test_future_major_is_preserved(hass: HomeAssistant) -> None:
+    entry = MockConfigEntry(domain=DOMAIN, version=2, minor_version=1)
+    entry.add_to_hass(hass)
+    assert not await async_migrate_entry(hass, entry)
+    assert (entry.version, entry.minor_version) == (2, 1)

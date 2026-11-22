@@ -1,6 +1,6 @@
 """Test the DWD Rain Radar config flow."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from aiohttp import ClientConnectionError
 import pytest
@@ -19,6 +19,7 @@ from custom_components.dwd_rainradar.const import (
     DOMAIN,
     SENSOR_GROUP_CURRENT,
     SENSOR_GROUP_EVENT,
+    SENSOR_GROUP_TYPE,
 )
 
 TEST_NAME = "Berlin"
@@ -80,6 +81,9 @@ async def test_user_flow_success(
 
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "sensor_groups"
+    groups_field = next(key for key in result["data_schema"].schema if key == CONF_SENSOR_GROUPS)
+    assert groups_field.default() == DEFAULT_SENSOR_GROUPS
+    assert SENSOR_GROUP_TYPE in groups_field.default()
     mock_dwd_connection.assert_awaited_once()
 
     result = await hass.config_entries.flow.async_configure(
@@ -98,6 +102,10 @@ async def test_user_flow_success(
 
     await hass.async_block_till_done()
     mock_setup_entry.assert_awaited_once()
+
+    # Setup was mocked, so this entry has no coordinator for a real unload.
+    with patch("custom_components.dwd_rainradar.async_unload_entry", return_value=True):
+        assert await hass.config_entries.async_unload(result["result"].entry_id)
 
 
 async def test_user_flow_invalid_name(
@@ -467,3 +475,36 @@ async def test_reconfigure_flow_duplicate_location(
     assert entry.data == ENTRY_DATA
 
     mock_dwd_connection.assert_not_awaited()
+
+
+@pytest.mark.parametrize(("language", "examples"), [("de", "Regen, Schnee oder Hagel"), ("en", "rain, snow or hail")])
+async def test_sensor_group_menu_translations(hass, language, examples):
+    """HA supplies a readable label for every group and guidance in both forms."""
+    from homeassistant.helpers.translation import async_get_translations
+
+    from custom_components.dwd_rainradar.config_flow import ConfigFlow, OptionsFlow
+
+    hass.config.language = language
+    entry = MockConfigEntry(domain=DOMAIN, options={CONF_SENSOR_GROUPS: DEFAULT_SENSOR_GROUPS})
+    entry.add_to_hass(hass)
+    setup = ConfigFlow()
+    setup.hass = hass
+    options = OptionsFlow()
+    options.hass = hass
+    options.handler = entry.entry_id
+    for result in (await setup.async_step_sensor_groups(), await options.async_step_init()):
+        schema = result["data_schema"]
+        selector = schema.schema[CONF_SENSOR_GROUPS]
+        payload = selector.serialize()["selector"]["select"]
+        labels = {item["value"]: item["label"] for item in payload["options"]}
+        assert set(labels) == set(DEFAULT_SENSOR_GROUPS)
+        assert examples in labels[SENSOR_GROUP_TYPE]
+        assert schema({CONF_SENSOR_GROUPS: [SENSOR_GROUP_TYPE]})[CONF_SENSOR_GROUPS] == [SENSOR_GROUP_TYPE]
+
+    translations = await async_get_translations(hass, language, "selector", [DOMAIN])
+    prefix = f"component.{DOMAIN}.selector.sensor_groups.options."
+    assert all(translations[prefix + group] != group for group in DEFAULT_SENSOR_GROUPS)
+    assert examples in translations[prefix + SENSOR_GROUP_TYPE]
+    for category, step in (("config", "sensor_groups"), ("options", "init")):
+        form = await async_get_translations(hass, language, category, [DOMAIN])
+        assert "HymecNG" in form[f"component.{DOMAIN}.{category}.step.{step}.description"]

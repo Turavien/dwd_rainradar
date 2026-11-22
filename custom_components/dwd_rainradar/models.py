@@ -67,6 +67,8 @@ class FetchResult:
 
     metadata: ProductMetadata = ProductMetadata()
 
+    remote_checked: bool = True
+
 
 @dataclass(frozen=True, slots=True)
 class DecodedProduct:

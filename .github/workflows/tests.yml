@@ -149,11 +149,11 @@ jobs:
         include:
 
           - role: min
-            name: min - HA 2025.3.0 / Python 3.13.2
+            name: min - HA 2024.12.0 / Python 3.13.2
             runner: ubuntu-24.04
             python-version: "3.13.2"
-            pytest-ha-version: "0.13.221"
-            ha-version: "2025.3.0"
+            pytest-ha-version: "0.13.190"
+            ha-version: "2024.12.0"
             coverage: false
 
           - role: dev
@@ -184,6 +184,7 @@ jobs:
           python -m pip install \
               --disable-pip-version-check \
               "pytest-homeassistant-custom-component==${{ matrix.pytest-ha-version }}" \
+              "pycares==4.5.0" \
               "h5py==3.16.0"
 
       - name: Install dev test dependencies

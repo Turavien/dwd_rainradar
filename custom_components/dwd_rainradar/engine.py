@@ -16,6 +16,7 @@ from .backfill import Backfill
 from .decoder import Decoder
 from .fetcher import Fetcher
 from .history import History
+from .hymec import Hymec
 from .models import (
     DecodedProduct,
     FetchResult,
@@ -58,6 +59,9 @@ class Engine:
         self._fetcher = Fetcher(
             hass,
         )
+
+        self.hymec = Hymec(hass, self._fetcher, self._decoder, self._storage)
+        self._snapshots: dict[str, dict[tuple[int, int], DecodedProduct]] = {}
 
         self._backfill = Backfill(
             self._fetcher,
@@ -161,6 +165,11 @@ class Engine:
             self._grid_cell_references[
                 grid_cell
             ] = references - 1
+
+            return
+
+        for snapshot in self._snapshots.values():
+            snapshot.pop(grid_cell, None)
 
         self._state_cache.pop(
             grid_cell,
@@ -305,191 +314,64 @@ class Engine:
     ) -> State:
         """Build one state from downloaded or stored products."""
 
-        decoded_products: dict[str, DecodedProduct] = {}
-
+        grid_cells = tuple(sorted(self._grid_cell_references))
+        decoded_products = {}
         for product in self._forecast_products:
+            by_cell = await self._async_product_cells(product, remote_results[product.key], grid_cells)
+            decoded_products[product.key] = by_cell[grid_cell]
 
-            result = remote_results[
-                product.key
-            ]
+        rw = await self._async_product_cells(RW, remote_results[RW.key], grid_cells)
+        decoded_products[RW.key] = rw[grid_cell]
+        latest = rw[grid_cell].values[-1]
+        if self._backfill_anchor != latest.valid_until:
+            since = latest.valid_until - RW.retention + RW.interval / 2
+            if self._start_backfill(since):
+                self._backfill_anchor = latest.valid_until
 
-            if not result.downloaded:
-
-                try:
-
-                    result = await self._storage.async_read_latest_product(
-                        product,
-                    )
-
-                except FileNotFoundError:
-
-                    result = await self._fetcher.async_download(
-                        product,
-                        force=True,
-                    )
-
-            decoded = await self._decoder.async_decode(
-                result,
-                grid_cell,
+        anchor = latest.valid_from
+        if self._rolling_cache_anchor != anchor or self._rolling_cache_grid_cells != grid_cells:
+            self._rolling_cache = await self._history.rolling_summaries_cells(
+                latest_rw={cell: rw[cell] for cell in grid_cells},
             )
+            self._rolling_cache_anchor = anchor
+            self._rolling_cache_grid_cells = grid_cells
 
-            decoded_products[
-                product.key
-            ] = decoded
+        return State(decoded_products, self._rolling_cache.get(grid_cell, {}))
 
-            latest_product_timestamp = (
-                decoded.values[0].timestamp
-                if decoded.values
-                else None
-            )
-
-            if result.downloaded:
-
-                await self._storage.async_store_product(
-                    result,
-                )
-
-            if latest_product_timestamp is not None:
-                self._latest_product_timestamps[
-                    product.key
-                ] = latest_product_timestamp
-
-            self._metadata_cache[
-                product.key
-            ] = result.metadata
-
-            if result.downloaded:
-
-                await self._storage.async_delete_old_files(
-                    product,
-                    result.valid_until,
-                )
-
-        product = RW
-
-        result = remote_results[
-            product.key
-        ]
+    async def _async_product_cells(
+        self, product: Product, result: FetchResult, cells: tuple[tuple[int, int], ...],
+    ) -> dict[tuple[int, int], DecodedProduct]:
+        """Replace a changed frame or extend the current frame for new locations."""
+        cached = self._snapshots.get(product.key, {})
+        missing = cells if result.downloaded else tuple(cell for cell in cells if cell not in cached)
+        if not missing:
+            return cached
 
         if not result.downloaded:
-
             try:
-
-                result = await self._history.read_latest()
-
+                result = (
+                    await self._history.read_latest() if product == RW
+                    else await self._storage.async_read_latest_product(product)
+                )
             except FileNotFoundError:
+                result = await self._fetcher.async_download(product, force=True)
+                missing = cells
 
-                result = await self._fetcher.async_download(
-                    product,
-                    force=True,
-                )
-
-        grid_cells = tuple(
-            sorted(
-                self._grid_cell_references
-            )
-        )
-
-        decoded_rw_by_cell = await self._decoder.async_decode_cells(
-            result,
-            grid_cells,
-        )
-
-        decoded = decoded_rw_by_cell[
-            grid_cell
-        ]
-
-        decoded_products[
-            product.key
-        ] = decoded
-
-        latest = decoded.values[-1]
-
-        latest_product_timestamp = (
-            decoded.values[0].timestamp
-            if decoded.values
-            else None
-        )
-
+        values = await self._decoder.async_decode_cells(result, missing)
         if result.downloaded:
+            if product == RW:
+                await self._history.store(result)
+                await self._history.prune()
+                self._rolling_cache_anchor = None
+            else:
+                await self._storage.async_store_product(result)
+                await self._storage.async_delete_old_files(product, result.valid_until)
 
-            await self._history.store(
-                result,
-            )
-
-        if latest_product_timestamp is not None:
-            self._latest_product_timestamps[
-                product.key
-            ] = latest_product_timestamp
-
-        self._metadata_cache[
-            product.key
-        ] = result.metadata
-
-        if result.downloaded:
-
-            await self._history.prune()
-
-            self._rolling_cache_anchor = None
-            self._rolling_cache_grid_cells = ()
-            self._rolling_cache = {}
-
-        if (
-            self._backfill_anchor
-            != latest.valid_until
-        ):
-
-            since = (
-                latest.valid_until
-                - RW.retention
-                + RW.interval / 2
-            )
-
-            if self._start_backfill(
-                since,
-            ):
-                self._backfill_anchor = (
-                    latest.valid_until
-                )
-
-        rolling: dict[str, float | None] = {}
-
-        if decoded.values:
-
-            rolling_anchor = (
-                decoded.values[0].valid_from
-            )
-
-            if (
-                self._rolling_cache_anchor
-                != rolling_anchor
-                or self._rolling_cache_grid_cells
-                != grid_cells
-            ):
-
-                self._rolling_cache = (
-                    await self._history.rolling_summaries_cells(
-                        latest_rw=decoded_rw_by_cell,
-                    )
-                )
-
-                self._rolling_cache_anchor = (
-                    rolling_anchor
-                )
-
-                self._rolling_cache_grid_cells = (
-                    grid_cells
-                )
-
-            rolling = self._rolling_cache.get(
-                grid_cell,
-                {},
-            )
-
-        return State(
-            decoded_products,
-            rolling,
-        )
+        snapshot = values if result.downloaded else cached | values
+        self._snapshots[product.key] = snapshot
+        self._latest_product_timestamps[product.key] = next(iter(values.values())).values[0].timestamp
+        self._metadata_cache[product.key] = result.metadata
+        return snapshot
 
     async def _async_backfill(
         self,
@@ -606,6 +488,8 @@ class Engine:
         self,
     ) -> None:
         """Cancel running background tasks."""
+
+        await self.hymec.shutdown()
 
         tasks = tuple(
             self._backfill_tasks

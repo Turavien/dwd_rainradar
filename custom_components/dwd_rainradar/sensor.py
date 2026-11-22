@@ -28,6 +28,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import (
     CONF_SENSOR_GROUPS,
     DEFAULT_SENSOR_GROUPS,
+    SENSOR_GROUP_TYPE,
     SENSOR_GROUP_CURRENT,
     SENSOR_GROUP_EVENT,
     SENSOR_GROUP_FORECAST,
@@ -37,6 +38,8 @@ from .const import (
 from .coordinator import UpdateCoordinator
 from .entity import DwdRainRadarEntity
 from .products import (
+    HYMEC,
+    PRECIPITATION_TYPES,
     Product,
     RS,
     RV,
@@ -56,7 +59,7 @@ class PrecipitationDescription(
 
     value_fn: Callable[
         [UpdateCoordinator],
-        float | datetime | None
+        float | datetime | str | None
     ]
 
     attributes_fn: Callable[
@@ -310,9 +313,45 @@ EVENT_SENSORS = (
             coordinator.data.precipitation_start,
     ),
 
+    PrecipitationDescription(
+        key="radvor_rv_outlook",
+        product=RV,
+        translation_key="precipitation_outlook",
+        device_class=SensorDeviceClass.ENUM,
+        options=["active", "expected", "none_expected"],
+        icon="mdi:weather-partly-rainy",
+        value_fn=lambda coordinator: coordinator.data.precipitation_outlook,
+    ),
+)
+
+PRECIPITATION_TYPE_ICONS = {
+    "no_precipitation": "mdi:water-off",
+    "no_precipitation_detected": "mdi:water-off-outline",
+    "unclassified": "mdi:help-circle-outline",
+    "drizzle": "mdi:weather-partly-rainy",
+    "rain": "mdi:weather-rainy",
+    "freezing_drizzle": "mdi:snowflake-alert",
+    "freezing_rain": "mdi:snowflake-alert",
+    "rain_and_snow": "mdi:weather-snowy-rainy",
+    "snow": "mdi:weather-snowy",
+    "graupel": "mdi:weather-hail",
+    "small_hail": "mdi:weather-hail",
+    "large_hail": "mdi:weather-hail"
+}
+
+TYPE_SENSORS = (
+    PrecipitationDescription(
+        key="hymecng_type",
+        product=HYMEC,
+        translation_key="precipitation_type",
+        device_class=SensorDeviceClass.ENUM,
+        options=list(PRECIPITATION_TYPES.values()),
+        value_fn=lambda coordinator: coordinator.data.precipitation_type,
+    ),
 )
 
 SENSOR_GROUP_MAP = {
+    SENSOR_GROUP_TYPE: TYPE_SENSORS,
     SENSOR_GROUP_CURRENT: INTENSITY_SENSORS,
     SENSOR_GROUP_FORECAST: FORECAST_SENSORS,
     SENSOR_GROUP_EVENT: EVENT_SENSORS,
@@ -379,7 +418,7 @@ class DwdRainRadarSensor(
     @property
     def native_value(
         self,
-    ) -> float | datetime | None:
+    ) -> float | datetime | str | None:
         """Return the native sensor value."""
 
         if self.coordinator.data is None:
@@ -388,6 +427,13 @@ class DwdRainRadarSensor(
         return self.entity_description.value_fn(
             self.coordinator
         )
+
+    @property
+    def icon(self) -> str | None:
+        """Publish the analysis icon with the state for all HA clients."""
+        if self.entity_description.product == HYMEC:
+            return PRECIPITATION_TYPE_ICONS.get(self.native_value, "mdi:weather-cloudy")
+        return super().icon
 
     @property
     def extra_state_attributes(

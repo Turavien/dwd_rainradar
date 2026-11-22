@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
 )
 
+from .const import CONF_SENSOR_GROUPS, DEFAULT_SENSOR_GROUPS, SENSOR_GROUP_TYPE
 from .engine import Engine
 from .state import State
 
@@ -57,6 +58,11 @@ class UpdateCoordinator(
             ]
         )
 
+        groups = entry.options.get(CONF_SENSOR_GROUPS, entry.data.get(CONF_SENSOR_GROUPS, DEFAULT_SENSOR_GROUPS))
+        self._include_hymec = SENSOR_GROUP_TYPE in groups
+        if self._include_hymec:
+            engine.hymec.subscribe(self._grid_cell, self._handle_background_update)
+
         self._engine.register_grid_cell(
             self._grid_cell,
         )
@@ -81,9 +87,10 @@ class UpdateCoordinator(
     ) -> dict[str, object]:
         """Return non-sensitive runtime diagnostics."""
 
-        return self._engine.get_diagnostics(
-            self.data,
-        )
+        diagnostics = self._engine.get_diagnostics(self.data)
+        if self._include_hymec:
+            diagnostics["hymecng"] = self._engine.hymec.diagnostics(self.data)
+        return diagnostics
 
     def unregister_engine(
         self,
@@ -94,6 +101,9 @@ class UpdateCoordinator(
             self._handle_background_update,
         )
 
+        if self._include_hymec:
+            self._engine.hymec.unsubscribe(self._handle_background_update)
+
         self._engine.unregister_grid_cell(
             self._grid_cell,
         )
@@ -103,6 +113,8 @@ class UpdateCoordinator(
     ) -> State:
         """Fetch and decode all configured products."""
 
-        return await self._engine.async_update(
+        analysis = self._engine.hymec.current(self._grid_cell) if self._include_hymec else None
+        state = await self._engine.async_update(
             grid_cell=self._grid_cell,
         )
+        return state.with_product(analysis) if analysis is not None else state

@@ -3,7 +3,7 @@
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 ![GitHub release](https://img.shields.io/github/v/release/Turavien/dwd_rainradar)
 ![GitHub last commit](https://img.shields.io/github/last-commit/Turavien/dwd_rainradar)
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.3.0%2B-18BCF2?logo=homeassistant&logoColor=white)](https://www.home-assistant.io/)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.12.0%2B-18BCF2?logo=homeassistant&logoColor=white)](https://www.home-assistant.io/)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)
 
 [![Open your Home Assistant instance and open the repository inside HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Turavien&repository=dwd_rainradar)
@@ -45,9 +45,10 @@ The following information is requested during initial setup:
 
 The following sensor groups are available:
 
+* **Current precipitation type** – shows what DWD detects near the ground at this location, such as rain, snow or hail (HymecNG). The sensor icon changes with the precipitation type.
 * **Intensities** – current intensity, +5, +10 and +15 minutes and the maximum expected intensity during the next two hours.
 * **Forecast totals** – expected precipitation totals during the next one and two hours.
-* **Precipitation event** – precipitation active and time until the next expected precipitation.
+* **Precipitation event** – precipitation active, time until the next expected precipitation and precipitation outlook.
 * **Last 1 hour total** – latest RADOLAN RW hourly precipitation total.
 * **Rolling totals** – precipitation totals during the previous 2 to 48 hours.
 
@@ -74,6 +75,10 @@ The **Reconfigure** flow can be used to change the name and location of an exist
 
 ![Integration](images/en/integration.png)
 
+### Select a location
+
+![Select a location](images/en/location.png)
+
 ### Options
 
 ![Options](images/en/options.png)
@@ -84,7 +89,7 @@ The **Reconfigure** flow can be used to change the name and location of an exist
 
 ## Features
 
-* Official DWD radar products (RADOLAN & RADVOR)
+* Official DWD radar products (RADOLAN, RADVOR & HymecNG)
 * Measured, forecast and derived precipitation entities
 * Automatic radar grid selection for the configured location
 * Optional sensor groups
@@ -104,6 +109,7 @@ The integration uses the following DWD products:
 * RADOLAN RW
 * RADVOR RS
 * RADVOR RV
+* HymecNG
 
 It provides the following entities:
 
@@ -136,12 +142,28 @@ It provides the following entities:
 
 * Time until next expected precipitation [min]
 * Precipitation active (binary sensor)
+* Precipitation outlook
+
+The outlook shows **Precipitation now**, **Precipitation expected** or **No precipitation expected**. The last state requires continuous dry RV coverage from now to the end of the DWD forecast (up to 120 minutes from the run time). Gaps without a positive interval give **unknown**. Missing or stale RV data give **unavailable**. The existing time sensor remains numeric.
+
+To combine the two readings on a dashboard, use a Markdown card. Replace both example IDs with the entities for your location.
+
+```yaml
+type: markdown
+content: >-
+  {% set minutes = states('sensor.example_precipitation_expected_within') %}
+  {% if is_number(minutes) %}
+    {{ minutes }} {{ state_attr('sensor.example_precipitation_expected_within', 'unit_of_measurement') }}
+  {% else %}
+    {{ state_translated('sensor.example_precipitation_outlook') }}
+  {% endif %}
+```
 
 ## Data Sources
 
 Data source: Deutscher Wetterdienst (DWD) Open Data. The values exposed by this integration are processed and derived from these source products.
 
-The integration currently uses three official DWD Open Data radar products, each serving a specific purpose.
+The integration currently uses four official DWD Open Data radar products, each serving a specific purpose.
 
 ### RADOLAN RW
 
@@ -160,6 +182,29 @@ For the next one and two hour sensors, the integration uses the first one or two
 Radar-based precipitation forecast in five-minute intervals covering the next 120 minutes.
 
 For the current intensity, the integration uses the RV five-minute interval containing the actual current time. Forecasts in 5, 10 and 15 minutes use the intervals containing the real current time plus 5, 10 and 15 minutes respectively. This means these sensors continue to advance with real time even between two DWD publications. The precipitation amount of each interval is converted to an equivalent intensity in mm/h. These values also provide the binary sensor **Precipitation active**, the real time until precipitation is next expected and the maximum expected intensity within the remaining available RV forecast horizon.
+
+### HymecNG
+
+**Current precipitation type** shows the DWD analysis for the location's grid cell at about two metres above ground. The group is selected by default for new locations. Updating to 3.3.0 also enables it once for existing locations. All other sensor group selections are preserved. You can turn precipitation type off in each location’s options.
+
+Enabled locations share one analysis file per instance. DWD publishes a frame every five minutes. The cache retains the latest analysis. ODIM value 254 (below the detection threshold) gives **No precipitation detected**. Explicit class code 0 gives **No precipitation**. Missing or unrecognised pixel codes give **unknown**. The DWD class “Unclassified” is a distinct valid state. A missing analysis or one older than 13 minutes gives **unavailable**. An outage of this source does not block the other products.
+
+State-based automations use these language-independent values.
+
+| Display | State |
+| --- | --- |
+| No precipitation detected | `no_precipitation_detected` |
+| No precipitation | `no_precipitation` |
+| Unclassified | `unclassified` |
+| Drizzle | `drizzle` |
+| Rain | `rain` |
+| Freezing drizzle | `freezing_drizzle` |
+| Freezing rain | `freezing_rain` |
+| Rain and snow | `rain_and_snow` |
+| Snow | `snow` |
+| Graupel | `graupel` |
+| Small hail | `small_hail` |
+| Large hail | `large_hail` |
 
 ## Data freshness and availability
 

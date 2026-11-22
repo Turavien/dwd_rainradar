@@ -379,6 +379,7 @@ async def test_async_download_skips_before_publication_window() -> None:
         downloaded=False,
         timestamp=None,
         metadata=metadata,
+        remote_checked=False,
     )
 
     fetcher._async_download.assert_not_awaited()

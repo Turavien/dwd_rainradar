@@ -158,10 +158,8 @@ def test_decode_hdf5_sets_product_interval() -> None:
         5,
     )
 
-    decoder._parser.read = MagicMock(
-        return_value=(
-            parsed,
-        ),
+    decoder._parser.read_cells = MagicMock(
+        return_value={GRID_CELL: parsed},
     )
 
     result = FetchResult(
@@ -198,8 +196,8 @@ def test_decode_hdf5_rejects_empty_values() -> None:
         MagicMock(),
     )
 
-    decoder._parser.read = MagicMock(
-        return_value=(),
+    decoder._parser.read_cells = MagicMock(
+        return_value={},
     )
 
     with pytest.raises(
@@ -244,16 +242,10 @@ def test_decode_tar_sorts_values_and_uses_full_interval() -> None:
         },
     )
 
-    decoder._parser.read = MagicMock(
-        side_effect=lambda data, _grid_cell: (
-            (
-                later,
-            )
-            if data == b"later"
-            else (
-                earlier,
-            )
-        ),
+    decoder._parser.read_cells = MagicMock(
+        side_effect=lambda data, cells, **kwargs: {
+            cell: later if data == b"later" else earlier for cell in cells
+        },
     )
 
     result = FetchResult(
@@ -436,27 +428,19 @@ def test_decode_cells_rejects_missing_data() -> None:
         )
 
 
-def test_decode_cells_rejects_tar_product() -> None:
-    """Test multi-cell decoding accepts only HDF5 products."""
-
-    decoder = Decoder(
-        MagicMock(),
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="only supported for HDF5",
-    ):
-
-        decoder.decode_cells(
-            FetchResult(
-                product=RV,
-                downloaded=True,
-                timestamp=None,
-                data=b"tar",
-            ),
-            GRID_CELLS,
-        )
+def test_decode_cells_tar_opens_each_member_once() -> None:
+    """Both stations receive every forecast from a single archive pass."""
+    decoder = Decoder(MagicMock())
+    decoder._extractor.extract = MagicMock(return_value={"a": b"a", "b": b"b"})
+    decoder._parser.read_cells = MagicMock(side_effect=[
+        {cell: _value(5, 10, i + 1) for i, cell in enumerate(GRID_CELLS)},
+        {cell: _value(0, 5, i + 3) for i, cell in enumerate(GRID_CELLS)},
+    ])
+    result = FetchResult(RV, True, None, data=b"test")
+    decoded = decoder.decode_cells(result, GRID_CELLS)
+    assert [[v.value for v in decoded[c].values] for c in GRID_CELLS] == [[3, 1], [4, 2]]
+    decoder._extractor.extract.assert_called_once_with(b"test")
+    assert decoder._parser.read_cells.call_count == 2
 
 
 def test_decode_cells_rejects_empty_values() -> None:

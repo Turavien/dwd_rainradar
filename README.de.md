@@ -3,7 +3,7 @@
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 ![GitHub release](https://img.shields.io/github/v/release/Turavien/dwd_rainradar)
 ![GitHub last commit](https://img.shields.io/github/last-commit/Turavien/dwd_rainradar)
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.3.0%2B-18BCF2?logo=homeassistant&logoColor=white)](https://www.home-assistant.io/)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.12.0%2B-18BCF2?logo=homeassistant&logoColor=white)](https://www.home-assistant.io/)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)
 
 [![Open your Home Assistant instance and open the repository inside HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Turavien&repository=dwd_rainradar)
@@ -45,9 +45,10 @@ Bei der erstmaligen Einrichtung werden folgende Angaben abgefragt:
 
 Folgende Sensorgruppen stehen zur Verfügung:
 
+* **Aktuelle Niederschlagsart** – zeigt, ob der DWD am Standort zum Beispiel Regen, Schnee oder Hagel erkennt (HymecNG). Das Symbol wechselt mit der Niederschlagsart.
 * **Intensitäten** – aktuelle Intensität, +5, +10 und +15 Minuten sowie die maximale erwartete Intensität der nächsten zwei Stunden.
 * **Vorhersagemengen** – erwartete Niederschlagssummen der nächsten ein und zwei Stunden.
-* **Niederschlagsereignis** – Niederschlag aktiv und Zeit bis zum nächsten erwarteten Niederschlag.
+* **Niederschlagsereignis** – Niederschlag aktiv, Zeit bis zum nächsten erwarteten Niederschlag und Niederschlagsausblick.
 * **Menge letzte 1 Stunde** – jüngste RADOLAN-RW-Stundensumme.
 * **Rollierende Mengen** – Niederschlagssummen der vergangenen 2 bis 48 Stunden.
 
@@ -74,17 +75,21 @@ Folgende Sensorgruppen stehen zur Verfügung:
 
 ![Integration](images/de/integration.png)
 
+### Standort auswählen
+
+![Standort auswählen](images/de/location.png)
+
 ### Optionen
 
-![Options](images/de/options.png)
+![Optionen](images/de/options.png)
 
 ### Entitäten
 
-![Entities](images/de/entities.png)
+![Entitäten](images/de/entities.png)
 
 ## Funktionen
 
-* Offizielle DWD-Radarprodukte (RADOLAN & RADVOR)
+* Offizielle DWD-Radarprodukte (RADOLAN, RADVOR & HymecNG)
 * Gemessene, vorhergesagte und berechnete Niederschlagsdaten
 * Automatische Auswahl der passenden Radarrasterzelle
 * Optionale Sensorgruppen
@@ -104,6 +109,7 @@ Die Integration verwendet folgende DWD-Produkte:
 * RADOLAN RW
 * RADVOR RS
 * RADVOR RV
+* HymecNG
 
 Sie stellt folgende Entitäten bereit:
 
@@ -136,6 +142,22 @@ Sie stellt folgende Entitäten bereit:
 
 * Zeit bis zum nächsten erwarteten Niederschlag [min]
 * Niederschlag aktiv (Binärsensor)
+* Niederschlagsausblick
+
+Der Ausblick zeigt **Niederschlag aktiv**, **Niederschlag erwartet** oder **Kein Niederschlag erwartet**. Letzteres setzt eine durchgehend trockene RV-Vorhersage vom aktuellen Zeitpunkt bis zum Ende des DWD-Laufs voraus (bis zu 120 Minuten ab Laufbeginn). Bei Datenlücken ohne positiven Treffer ist der Zustand **unbekannt**, bei fehlenden oder veralteten RV-Daten **nicht verfügbar**. Der bestehende Minutensensor bleibt numerisch.
+
+Für eine gemeinsame Dashboard-Zeile kannst du eine Markdown-Karte verwenden. Ersetze beide Beispiel-IDs durch die Entitäten deines Standorts.
+
+```yaml
+type: markdown
+content: >-
+  {% set minutes = states('sensor.example_precipitation_expected_within') %}
+  {% if is_number(minutes) %}
+    {{ minutes }} {{ state_attr('sensor.example_precipitation_expected_within', 'unit_of_measurement') }}
+  {% else %}
+    {{ state_translated('sensor.example_precipitation_outlook') }}
+  {% endif %}
+```
 
 ## Datenquellen
 
@@ -160,6 +182,29 @@ Für die Sensoren der nächsten ein beziehungsweise zwei Stunden verwendet die I
 Radarbasierte Niederschlagsvorhersage in Fünf-Minuten-Intervallen für die kommenden 120 Minuten.
 
 Für die aktuelle Intensität verwendet die Integration das RV-Fünf-Minuten-Intervall, das den tatsächlichen aktuellen Zeitpunkt enthält. Die Vorhersagen in 5, 10 und 15 Minuten verwenden entsprechend die Intervalle, welche die reale aktuelle Uhrzeit plus 5, 10 beziehungsweise 15 Minuten enthalten. Dadurch schreiten diese Sensoren auch zwischen zwei DWD-Veröffentlichungen mit der realen Zeit fort. Die Niederschlagsmenge jedes Intervalls wird in eine äquivalente Intensität in mm/h umgerechnet. Daraus entstehen außerdem der Binärsensor **„Niederschlag aktiv“**, die reale Zeit bis zum nächsten erwarteten Niederschlag sowie die höchste im noch verfügbaren RV-Vorhersagezeitraum erwartete Intensität.
+
+### HymecNG
+
+Der Sensor **Aktuelle Niederschlagsart** zeigt die DWD-Analyse für die Rasterzelle des Standorts in etwa zwei Metern Höhe. Die Gruppe ist bei neuen Standorten vorausgewählt. Beim Update auf 3.3.0 wird sie auch für bestehende Standorte einmalig aktiviert. Alle anderen Sensorgruppen behalten ihre Auswahl. Du kannst die Niederschlagsart in den Optionen jedes Standorts wieder abwählen.
+
+Alle aktivierten Standorte teilen sich eine Analysedatei pro Instanz. Der DWD veröffentlicht sie alle fünf Minuten. Im Cache bleibt die jüngste Analyse erhalten. Der ODIM-Wert 254 (unter der Erkennungsschwelle) ergibt **Kein Niederschlag erkannt**. Der explizite Klassencode 0 ergibt **Kein Niederschlag**. Fehlende oder unbekannte Rastercodes ergeben **unbekannt**. Der DWD-Code „Nicht klassifiziert“ ist ein eigener gültiger Zustand. Fehlt eine Analyse oder ist sie älter als 13 Minuten, wird der Sensor **nicht verfügbar**. Ein Ausfall dieser Datenquelle blockiert die übrigen Produkte nicht.
+
+Für zustandsbasierte Automationen gelten folgende sprachunabhängige Werte.
+
+| Anzeige | Zustand |
+| --- | --- |
+| Kein Niederschlag erkannt | `no_precipitation_detected` |
+| Kein Niederschlag | `no_precipitation` |
+| Nicht klassifiziert | `unclassified` |
+| Sprühregen | `drizzle` |
+| Regen | `rain` |
+| Gefrierender Sprühregen | `freezing_drizzle` |
+| Gefrierender Regen | `freezing_rain` |
+| Schneeregen | `rain_and_snow` |
+| Schnee | `snow` |
+| Graupel | `graupel` |
+| Kleiner Hagel | `small_hail` |
+| Großer Hagel | `large_hail` |
 
 ## Datenaktualität und Verfügbarkeit
 

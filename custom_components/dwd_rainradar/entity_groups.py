@@ -1,6 +1,7 @@
 """Entity groups for DWD Rain Radar."""
 
 from .const import (
+    SENSOR_GROUP_TYPE,
     SENSOR_GROUP_CURRENT,
     SENSOR_GROUP_EVENT,
     SENSOR_GROUP_FORECAST,
@@ -9,6 +10,7 @@ from .const import (
 )
 
 ENTITY_GROUPS = {
+    SENSOR_GROUP_TYPE: ("hymecng_type",),
     SENSOR_GROUP_CURRENT: (
         "radvor_rv_now",
         "radvor_rv_5min",
@@ -24,6 +26,7 @@ ENTITY_GROUPS = {
 
     SENSOR_GROUP_EVENT: (
         "radvor_rv_start",
+        "radvor_rv_outlook",
         "radvor_rv_active",
     ),
 

@@ -310,6 +310,7 @@ class Fetcher:
             return FetchResult(
                 product=product,
                 downloaded=False,
+                remote_checked=False,
                 timestamp=None,
                 metadata=(
                     metadata

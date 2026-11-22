@@ -14,7 +14,7 @@ from .models import (
     DecodedProduct,
     ParsedValue,
 )
-from .products import Product
+from .products import HYMEC, PRECIPITATION_TYPES, Product
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +30,18 @@ class State:
             UTC,
         )
     )
+
+    def with_product(self, product: DecodedProduct) -> State:
+        """Attach a location's optional analysis to its forecast snapshot."""
+        return State(self._products | {product.product.key: product}, self._rolling, self._reference_time)
+
+    @property
+    def precipitation_type(self) -> str | None:
+        """Return the stable HA option for a classified pixel."""
+        latest = self._last(HYMEC.key)
+        if latest is None or latest.value is None:
+            return None
+        return PRECIPITATION_TYPES[int(latest.value)]
 
     def with_reference_time(
         self,
@@ -249,6 +261,28 @@ class State:
             return None
 
         return maximum * 12
+
+    @property
+    def precipitation_outlook(self) -> str | None:
+        """Report positive evidence or a fully covered dry forecast."""
+        values = self._values("rv")
+        if not values:
+            return None
+
+        now = self._reference_time
+        end = values[0].timestamp + timedelta(hours=2)
+        covered_until = now
+        for interval in values:
+            if interval.valid_until <= now or interval.valid_from >= end:
+                continue
+            if interval.value is None:
+                continue
+            if interval.value > 0:
+                return "active" if interval.valid_from <= now else "expected"
+            if interval.valid_from <= covered_until:
+                covered_until = max(covered_until, interval.valid_until)
+
+        return "none_expected" if now < end <= covered_until else None
 
     def _first_positive_rv_start_minutes(
         self,
